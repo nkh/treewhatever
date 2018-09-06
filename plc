@@ -1,0 +1,75 @@
+#!/usr/bin/env perl 
+		
+use strict ;
+use warnings ;
+
+use File::Spec ;
+use Term::ANSIColor ;
+use File::LsColor qw(ls_color_custom) ;
+
+use Getopt::Long ;
+
+my $values = 0 ;
+
+die 'Error parsing options!'unless
+        GetOptions
+                (
+                'v|values' => \$values,
+                'h|help' => \&display_help,
+                ) ;
+
+sub display_help
+{
+print <<'EOH' ;
+Options:
+	'v|values'	Expect values after path
+
+
+examples:
+
+EOH
+exit ;
+}
+
+my $ansi = qr/\e\[(?:[0-9;]*)[mK]/ ;
+
+while (<>)
+	{
+	chomp ;
+
+	#separate path from rest of line
+	my ($path, $rest, @rest) = split( /(?<!:) : (?!:)/x ) ; 
+	
+	if($values && defined $rest)
+		{	
+		$rest = ':' . $rest ;
+		$rest .= ':' . join(':', @rest) if @rest ;
+		}
+	else
+		{
+		$rest = '' ;
+		}
+
+	$path =~ s/$ansi//g ;
+
+	my (undef, $directories, $file_name) = File::Spec->splitpath($path) ;
+
+	my $colored_path = ls_color_custom($ENV{LS_COLORS}, $directories) ;
+
+	if (-d $path)
+		{
+		$path .= '/' unless /\/$/ ;
+		print ls_color_custom($ENV{LS_COLORS}, $path) . color('reset') . "$rest\n" ;
+		}
+	else
+		{
+		my $f = ls_color_custom($ENV{LS_COLORS}, $path) ;
+		
+		(my $color) = $f =~ /($ansi)/ ;
+		$color //= '' ;
+
+		print "$colored_path$color$file_name" . color('reset') . "$rest\n" ;
+		}
+	}
+
+

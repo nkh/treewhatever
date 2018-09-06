@@ -15,6 +15,7 @@ die 'Error parsing options!'unless
         GetOptions
                 (
                 't|title=s' => \my $title,
+                'a|ansi_lines' => \my $lines,
                 'v|values' => \$values,
                 'no_color' => \my $no_color,
                 'h|help' => \&display_help,
@@ -33,28 +34,32 @@ Options:
 	'no_color'	remove color from input
 
 examples:
-	grep -n -r --color=always regex path | ... | ./tw -c -v -t matches 
+	grep -n -r --color=always regex path | ... | ./tw -v -t matches 
 
 	find path | grep -v '.git' | ./tw -t tree
 
 EOH
+
+exit ;
 }
 
 my (%tree, $tree_position, %tree_directories) ;
+
+my $ansi = qr/\e\[(?:[0-9;]*)m/ ;
 
 while (<>)
 	{
 	chomp ;
 
-	s/(\x1b\[([0-9;]*)m)//g if $no_color ;
+	s/$ansi//g if $no_color ;
 
 	my ($color_path, $path, $rest) ;
 
 	#separate path from rest of line
 	($path, $rest, my @rest) = split( /(?<!:) : (?!:)/x ) ; ;
-	$rest .= ':' . join(':', @rest) ;
+	$rest .= ':' . join(':', @rest) if @rest ;
 
-	my $ansi = qr/\e\[\d+(?>(;\d+)*)m/ ;
+
 	($color_path) = $path =~ /^($ansi)*/ ;
 
 	$color_path //= '' ;
@@ -87,11 +92,13 @@ while (<>)
 
 	$tree_directories{$directories} = $tree_position ;
 
+	$file_name =~ s/$ansi$// ; 
+	
 	if ($file_name ne '') 
 		{
 		my $element_name = $color_path.$file_name.color('reset') ;
 
-		if (exists $tree_position->{$element_name})
+		if (exists $tree_position->{$element_name} && $values)
 			{
 			# keep list of values
 			if ( '' eq ref($tree_position->{$element_name}) )
@@ -110,5 +117,9 @@ while (<>)
 	}
 
 #todo: sort directories first
-print DumpTree \%tree, $title || 'use -t to set title', DISPLAY_ADDRESS => 0, DISPLAY_NO_VALUE => !$values, NO_NO_ELEMENTS => 1  ;
+print DumpTree \%tree, $title || 'tw: use -t to set title',
+	DISPLAY_ADDRESS => 0,
+	DISPLAY_NO_VALUE => !$values,
+	USE_ASCII => !$lines,
+	NO_NO_ELEMENTS => 1  ;
 
