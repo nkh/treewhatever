@@ -1,0 +1,114 @@
+#!/usr/bin/env perl 
+		
+use strict ;
+use warnings ;
+
+use File::Spec ;
+use Data::TreeDumper ;
+use Term::ANSIColor ;
+
+use Getopt::Long ;
+
+my $values = 0 ;
+
+die 'Error parsing options!'unless
+        GetOptions
+                (
+                't|title=s' => \my $title,
+                'v|values' => \$values,
+                'no_color' => \my $no_color,
+                'h|help' => \&display_help,
+                ) ;
+
+sub display_help
+{
+print <<'EOH' ;
+Options:
+	't|title=s' 	Set the tree title
+	'v|values'	keep nd display values, the input is in the form
+				path/path/path: value
+
+			multiple values can be associated with the same path
+
+	'no_color'	remove color from input
+
+examples:
+	grep -n -r --color=always regex path | ... | ./tw -c -v -t matches 
+
+	find path | grep -v '.git' | ./tw -t tree
+
+EOH
+}
+
+my (%tree, $tree_position, %tree_directories) ;
+
+while (<>)
+	{
+	chomp ;
+
+	s/(\x1b\[([0-9;]*)m)//g if $no_color ;
+
+	my ($color_path, $path, $rest) ;
+
+	#separate path from rest of line
+	($path, $rest, my @rest) = split( /(?<!:) : (?!:)/x ) ; ;
+	$rest .= ':' . join(':', @rest) ;
+
+	my $ansi = qr/\e\[\d+(?>(;\d+)*)m/ ;
+	($color_path) = $path =~ /^($ansi)*/ ;
+
+	$color_path //= '' ;
+	$rest //= '' ;	
+
+	my (undef, $directories, $file_name) = File::Spec->splitpath($path) ;
+		
+	if(defined $tree_directories{$directories} && 'HASH' eq ref $tree_directories{$directories})
+		{
+		$tree_position = $tree_directories{$directories} ;
+		}
+	else
+		{
+		$tree_position = \%tree ;
+
+		my @dirs = File::Spec->splitdir($directories) ;		
+		delete $dirs[-1] ;
+
+		for (@dirs)
+			{
+			next if $_ eq '' ;
+
+			$_ = $color_path.$_.color('reset') ;
+
+			$tree_position->{$_} = {} unless exists $tree_position->{$_} ;
+			$tree_position->{$_} = {} if('HASH' ne ref $tree_position->{$_}) ;
+			$tree_position = $tree_position->{$_} ;
+			}
+		}
+
+	$tree_directories{$directories} = $tree_position ;
+
+	if ($file_name ne '') 
+		{
+		my $element_name = $color_path.$file_name.color('reset') ;
+
+		if (exists $tree_position->{$element_name})
+			{
+			# keep list of values
+			if ( '' eq ref($tree_position->{$element_name}) )
+				{
+				$tree_position->{$element_name}
+					= [ $tree_position->{$element_name} ] ;
+				}
+			
+			push @{ $tree_position->{$element_name} }, $rest.color('reset') ;
+			}
+		else
+			{
+			$tree_position->{$element_name} = $rest.color('reset')
+			}
+		}
+	}
+
+#todo: sort directories first
+print DumpTree \%tree, $title || 'use -t to set title', DISPLAY_ADDRESS => 0, DISPLAY_NO_VALUE => !$values, NO_NO_ELEMENTS => 1  ;
+
