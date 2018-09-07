@@ -9,14 +9,13 @@ use Term::ANSIColor ;
 
 use Getopt::Long ;
 
-my $values = 0 ;
-
 die 'Error parsing options!'unless
         GetOptions
                 (
                 't|title=s' => \my $title,
                 'a|ansi_lines' => \my $lines,
-                'v|values' => \$values,
+                'v|values' => \my $values,
+                'd|directories_first' => \my $directories_first,
                 'no_color' => \my $no_color,
                 'h|help' => \&display_help,
                 ) ;
@@ -34,10 +33,11 @@ Options:
 	'no_color'	remove color from input
 
 examples:
-	grep -n -r --color=always regex path | ... | ./tw -v -t matches 
+	grep -n -r --color=always regex path | plc -v | tw -v -t matches 
 
-	find path | grep -v '.git' | ./tw -t tree
+	find path | grep -v '.git' | tw -t tree
 
+	printf "1/2/3:v1\n1/2/4:v2\n2\n" | tw -t test -v
 EOH
 
 exit ;
@@ -45,7 +45,7 @@ exit ;
 
 my (%tree, $tree_position, %tree_directories) ;
 
-my $ansi = qr/\e\[(?:[0-9;]*)m/ ;
+my $ansi = qr/\e\[(?:[0-9;]*)[mK]/ ;
 
 while (<>)
 	{
@@ -53,14 +53,13 @@ while (<>)
 
 	s/$ansi//g if $no_color ;
 
-	my ($color_path, $path, $rest) ;
+	my ($path, $rest) ;
 
 	#separate path from rest of line
 	($path, $rest, my @rest) = split( /(?<!:) : (?!:)/x ) ; ;
 	$rest .= ':' . join(':', @rest) if @rest ;
 
-
-	($color_path) = $path =~ /^($ansi)*/ ;
+	(my $color_path) = $path =~ /^($ansi)*/ ;
 
 	$color_path //= '' ;
 	$rest //= '' ;	
@@ -92,7 +91,7 @@ while (<>)
 
 	$tree_directories{$directories} = $tree_position ;
 
-	$file_name =~ s/$ansi$// ; 
+	$file_name =~ s/($ansi)+$// ; 
 	
 	if ($file_name ne '') 
 		{
@@ -116,10 +115,41 @@ while (<>)
 		}
 	}
 
-#todo: sort directories first
+sub directories_first 
+{
+my $tree = shift ;
+
+if('HASH' eq ref $tree) 
+	{
+	my @keys = sort 
+			{
+			(my $xa = $a) =~ s/$ansi//g ; 
+			(my $xb = $b) =~ s/$ansi//g ; 
+
+			if('HASH' eq ref($tree->{$a}) && 'HASH' eq ref($tree->{$b})) 
+				{ $xa cmp $xb }
+			elsif('HASH' eq ref($tree->{$a}))
+				{ 0 }
+			elsif('HASH' eq ref($tree->{$b}))
+				{ 1 }
+			else
+				{ $xa cmp $xb }
+			} keys %$tree ;
+
+	return ('HASH', undef, @keys) ;
+	}
+ 
+return (Data::TreeDumper::DefaultNodesToDisplay($tree)) ;
+}
+
+my @options ;
+push @options, (FILTER => \&directories_first) if $directories_first ;
+
 print DumpTree \%tree, $title || 'tw: use -t to set title',
 	DISPLAY_ADDRESS => 0,
 	DISPLAY_NO_VALUE => !$values,
 	USE_ASCII => !$lines,
-	NO_NO_ELEMENTS => 1  ;
+	NO_NO_ELEMENTS => 1,
+	@options ;
+
 
