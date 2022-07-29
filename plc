@@ -5,9 +5,10 @@ use warnings ;
 
 use File::Spec ;
 use Term::ANSIColor ;
-use File::LsColor qw(ls_color_custom) ;
+#use File::LsColor qw(ls_color_custom) ;
 
 use Getopt::Long ;
+$|++ ;
 
 my $values = 0 ;
 
@@ -21,9 +22,16 @@ die 'Error parsing options!'unless
 sub display_help
 {
 print <<'EOH' ;
+Name:
+	plc: path ls color
+
+	extract a path from a line folowing pattern: path/file:rest
+	and colors the path and file according to LS_COLORS
+
+	uses 'lscolors' or File::LS_colors
+ 
 Options:
 	'v|values'	Expect values after path
-
 
 examples:
 
@@ -32,6 +40,10 @@ exit ;
 }
 
 my $ansi = qr/\e\[(?:[0-9;]*)[mK]/ ;
+	
+use FileHandle;
+use IPC::Open2;
+my $pid = open2(*COLORED, *LSCOLORS, "lscolors");
 
 while (<>)
 	{
@@ -39,37 +51,18 @@ while (<>)
 
 	#separate path from rest of line
 	my ($path, $rest, @rest) = split( /(?<!:) : (?!:)/x ) ; 
-	
-	if($values && defined $rest)
-		{	
-		$rest = ':' . $rest ;
-		$rest .= ':' . join(':', @rest) if @rest ;
-		}
-	else
-		{
-		$rest = '' ;
-		}
+	$path //='' ;
+
+	$rest = $values && defined $rest 
+			? ':' . $rest . (@rest ? ':' . join(':', @rest) : '')
+			:  '' ;
 
 	$path =~ s/$ansi//g ;
 
-	my (undef, $directories, $file_name) = File::Spec->splitpath($path) ;
+	#print ls_color_custom($ENV{LS_COLORS}, $path) . color('reset') . "$rest\n" ;
+	print LSCOLORS "$path\n" ;
+	$path = <COLORED> ;
+	chomp $path ;
 
-	my $colored_path = ls_color_custom($ENV{LS_COLORS}, $directories) ;
-
-	if (-d $path)
-		{
-		$path .= '/' unless /\/$/ ;
-		print ls_color_custom($ENV{LS_COLORS}, $path) . color('reset') . "$rest\n" ;
-		}
-	else
-		{
-		my $f = ls_color_custom($ENV{LS_COLORS}, $path) ;
-		
-		(my $color) = $f =~ /($ansi)/ ;
-		$color //= '' ;
-
-		print "$colored_path$color$file_name" . color('reset') . "$rest\n" ;
-		}
+	print $path . "$rest\n" ;
 	}
-
-
